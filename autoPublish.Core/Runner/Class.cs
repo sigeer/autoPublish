@@ -108,8 +108,8 @@ namespace autoPublish.Core.Runner
             htmlContent = htmlContent.Replace("{CONTENT}", UpdateContent);
             File.WriteAllText(targetPath, htmlContent, System.Text.Encoding.UTF8);
             Console.WriteLine($"write into {targetPath}");
-            Console.WriteLine($"wait 1 second");
-            Thread.Sleep(1000);
+            Console.WriteLine($"wait 5 second");
+            Thread.Sleep(5000);
         }
 
         private void RemoveOfflineHtml()
