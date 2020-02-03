@@ -111,5 +111,35 @@ namespace autoPublish.Web.Controllers
             }
             return new HttpResponseMessage(HttpStatusCode.OK);
         }
+
+        [HttpGet]
+        public async Task<HttpResponseMessage> Index(string data)
+        {
+            if (data != "123456")
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+            var ip = HttpContext.Connection.RemoteIpAddress.ToString();
+            var allowed = _configuration.GetSection("ManualUrl").Value;
+            if (allowed == "*" || allowed.Split(",").Contains(ip))
+            {
+                _logger.Info("---手动更新---");
+                var list = _configuration.GetSection("Repositories").Get<List<RepositoryModel>>();
+                foreach (var model in list)
+                {
+                    foreach (var projectModel in model.OutputProjects)
+                    {
+                        _logger.Info(projectModel.LiveRootDir);
+                        var project = new Project(projectModel, new GitHubRepositryFactory());
+
+                        var publisher = new AutoPublisher(project);
+                        await publisher.Core();
+                    }
+                }
+                _logger.Info("===手动更新===");
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
     }
 }
