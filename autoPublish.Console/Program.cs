@@ -1,5 +1,6 @@
 ﻿using autoPublish.Core.Models;
 using autoPublish.Core.Runner;
+using Microsoft.Extensions.Configuration;
 using System;
 
 namespace autoPublish.ConsoleTest
@@ -8,6 +9,8 @@ namespace autoPublish.ConsoleTest
     {
         static void Main(string[] args)
         {
+            var builder = new ConfigurationBuilder();
+            var configuration = builder.Build();
             var model = new RepositoryModel();
             model.OutputProjects = new System.Collections.Generic.List<ProjectModel>()
             {
@@ -24,7 +27,7 @@ namespace autoPublish.ConsoleTest
                 var project = new Project(projectModel, new GitHubRepositryFactory());
 
                 var publisher = new AutoPublisher(project);
-                publisher.Core();
+                publisher.Core().Wait();
             }
             Console.ReadLine();
         }

@@ -28,27 +28,28 @@ namespace autoPublish.Web.Controllers
         public HomeController(IConfiguration configuration)
         {
             _configuration = configuration;
-            _logger.Info("1111");
+            _logger.Info("构造函数");
         }
 
-        private string GetRequestBodyUTF8String()
+        private async Task<string> GetRequestBodyUTF8String()
         {
-            this.Request.EnableBuffering();
-            this.Request.Body.Position = 0;
-            Encoding encoding = System.Text.UTF8Encoding.Default;
-            if (this.Request.ContentLength > 0 && this.Request.Body != null && this.Request.Body.CanRead)
+            try
             {
-                using (var buffer = new MemoryStream())
+                Request.EnableBuffering();
+                using (var reader = new StreamReader(Request.Body, encoding: Encoding.UTF8))
                 {
-                    this.Request.Body.CopyTo(buffer);
-                    buffer.Position = 0;
-                    var reader = new StreamReader(buffer, encoding);
-                    var body = reader.ReadToEnd();
+                    var body = await reader.ReadToEndAsync();
+                    // Do some processing with body…
+                    // Reset the request body stream position so the next middleware can read it
+                    Request.Body.Position = 0;
                     return body;
                 }
             }
-
-            return string.Empty;
+            catch (Exception ex)
+            {
+                _logger.Error(ex.Message);
+                return string.Empty;
+            }
         }
 
         //sha1加密（标准）
@@ -73,10 +74,11 @@ namespace autoPublish.Web.Controllers
         [HttpPost]
         public async Task<HttpResponseMessage> Input()
         {
+            _logger.Info("action");
             var signature = Request.Headers["X-Hub-Signature"];
             var gitIssuer = Request.Headers["X-GitHub-Event"];
 
-            var body = GetRequestBodyUTF8String();
+            var body = await GetRequestBodyUTF8String();
 
             _logger.Info("X-Hub-Signature: " + signature);
             _logger.Info("Body: " + body);
@@ -110,6 +112,36 @@ namespace autoPublish.Web.Controllers
                 }
             }
             return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+
+        [HttpGet]
+        public async Task<HttpResponseMessage> Index(string data)
+        {
+            if (data != "123456")
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+            var ip = HttpContext.Connection.RemoteIpAddress.ToString();
+            var allowed = _configuration.GetSection("ManualUrl").Value;
+            if (allowed == "*" || allowed.Split(",").Contains(ip))
+            {
+                _logger.Info("---手动更新---");
+                var list = _configuration.GetSection("Repositories").Get<List<RepositoryModel>>();
+                foreach (var model in list)
+                {
+                    foreach (var projectModel in model.OutputProjects)
+                    {
+                        _logger.Info(projectModel.LiveRootDir);
+                        var project = new Project(projectModel, new GitHubRepositryFactory());
+
+                        var publisher = new AutoPublisher(project);
+                        await publisher.Core();
+                    }
+                }
+                _logger.Info("===手动更新===");
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
     }
 }
