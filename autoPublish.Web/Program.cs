@@ -44,6 +44,8 @@ namespace autoPublish.Web
                 .WriteTo.Logger(lg => lg.Filter.ByIncludingOnly(p => p.Level == LogEventLevel.Fatal).WriteTo.Console().WriteTo.Async(
                     a => a.File("logs/Fatal-.txt", rollingInterval: RollingInterval.Day)
                 ));
+
+                Log.Logger = config.CreateLogger();
             }).ConfigureWebHostDefaults(config =>
             {
                 config.UseStartup<Startup>();
