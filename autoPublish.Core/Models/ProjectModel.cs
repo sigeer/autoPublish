@@ -37,7 +37,7 @@ namespace autoPublish.Core.Models
         /// </summary>
         public string[] CommandList { get; set; }
         private static string Path { get; set; }
-        public string ExecuteMethodFromCommand(string cmd, Project pro)
+        public (string, bool) ExecuteMethodFromCommand(string cmd, Project pro)
         {
             var propertyReg = new Regex(@"\{\{(.+?)\}\}");
             if (propertyReg.IsMatch(cmd))
@@ -54,7 +54,6 @@ namespace autoPublish.Core.Models
                     var replaceValue = property.GetValue(pro).ToString();
                     cmd = cmd.Replace(m.Value, replaceValue);
                 }
-                return cmd;
             }
             var methodReg = new Regex(@"\[\[(.+?)\]\]");
             if (methodReg.IsMatch(cmd))
@@ -62,14 +61,14 @@ namespace autoPublish.Core.Models
                 var m = methodReg.Match(cmd);
                 var ass = typeof(Project);
                 var method = ass.GetMethod(m.Groups[1].Value);
-                if (method == null)
+                if (method != null)
                 {
-                    return cmd;
+                    var result = method.Invoke(pro, null);
+                    return (result?.ToString(), false);
                 }
-                var result = method.Invoke(pro, null);
-                return result?.ToString();
+
             }
-            return cmd;
+            return (cmd, true);
         }
 
         public virtual string Execute(Project pro)
@@ -77,14 +76,17 @@ namespace autoPublish.Core.Models
             var sb = new StringBuilder();
             foreach (var cmd in CommandList)
             {
-                var realCMD = ExecuteMethodFromCommand(cmd, pro);
-                var isJump = realCMD.StartsWith("cd");
-                if (isJump)
-                {
-                    Path = realCMD.Split(" ")[1];
-                }
+                var (realCMD, isCmd) = ExecuteMethodFromCommand(cmd, pro);
                 sb.AppendLine(realCMD);
-                sb.AppendLine(CMDHelper.RunCmd(Path, realCMD));
+                if (isCmd)
+                {
+                    var isJump = realCMD.StartsWith("cd");
+                    if (isJump)
+                    {
+                        Path = realCMD.Split(" ")[1];
+                    }
+                    sb.AppendLine(CMDHelper.RunCmd(Path, realCMD));
+                }
             }
             return sb.ToString();
         }
