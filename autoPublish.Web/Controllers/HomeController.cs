@@ -14,7 +14,8 @@ using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
-using NLog;
+using Microsoft.Extensions.Logging;
+using Sigeer.Tool.Extension;
 
 namespace autoPublish.Web.Controllers
 {
@@ -23,12 +24,15 @@ namespace autoPublish.Web.Controllers
     [ApiController]
     public class HomeController : ControllerBase
     {
-        private IConfiguration _configuration;
-        private Logger _logger => LogManager.GetCurrentClassLogger();
-        public HomeController(IConfiguration configuration)
+        private ILogger<HomeController> _logger;
+        private Project _project;
+        private List<RepositoryModel> _repositoryList;
+
+        public HomeController(ILogger<HomeController> logger, Project project, List<RepositoryModel> repositoryList)
         {
-            _configuration = configuration;
-            _logger.Info("构造函数");
+            _logger = logger;
+            _project = project;
+            _repositoryList = repositoryList;
         }
 
         private async Task<string> GetRequestBodyUTF8String()
@@ -47,7 +51,7 @@ namespace autoPublish.Web.Controllers
             }
             catch (Exception ex)
             {
-                _logger.Error(ex.Message);
+                _logger.LogError(ex.Message);
                 return string.Empty;
             }
         }
@@ -74,40 +78,38 @@ namespace autoPublish.Web.Controllers
         [HttpPost]
         public async Task<HttpResponseMessage> Input()
         {
-            _logger.Info("action");
+            _logger.LogInformation("action");
             var signature = Request.Headers["X-Hub-Signature"];
             var gitIssuer = Request.Headers["X-GitHub-Event"];
 
             var body = await GetRequestBodyUTF8String();
 
-            _logger.Info("X-Hub-Signature: " + signature);
-            _logger.Info("Body: " + body);
-            _logger.Info("X-GitHub-Event: " + gitIssuer);
+            _logger.LogInformation("X-Hub-Signature: " + signature);
+            _logger.LogInformation("Body: " + body);
+            _logger.LogInformation("X-GitHub-Event: " + gitIssuer);
 
             var isMaster = isNeededBranch(HttpUtility.UrlDecode(body));
             if (!isMaster)
             {
-                _logger.Info("不是master");
+                _logger.LogInformation("不是master");
                 return new HttpResponseMessage(HttpStatusCode.OK);
             }
 
-            var list = _configuration.GetSection("Repositories").Get<List<RepositoryModel>>();
-
-            foreach (var model in list)
+            foreach (var model in _repositoryList)
             {
                 HMACSHA1 hmacsha1 = new HMACSHA1(Encoding.UTF8.GetBytes(model.Secret));
                 byte[] rstRes = hmacsha1.ComputeHash(Encoding.UTF8.GetBytes(body));
                 string localSignature = "sha1=" + HMAC1(model.Secret, body);
-                _logger.Info(localSignature);
+                _logger.LogInformation(localSignature);
 
                 if (signature == localSignature)
                 {
                     foreach (var projectModel in model.OutputProjects)
                     {
-                        var project = new Project(projectModel, new GitHubRepositryFactory());
+                        _project.Init(projectModel, new GitHubRepositryFactory());
 
-                        var publisher = new AutoPublisher(project);
-                        await publisher.Core();
+                        var str = await _project.Core();
+                        _logger.LogInformation(str);
                     }
                 }
             }
@@ -117,31 +119,33 @@ namespace autoPublish.Web.Controllers
         [HttpGet]
         public async Task<HttpResponseMessage> Index(string data)
         {
-            if (data != "123456")
-            {
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
-            }
+            _logger.LogInformation("request code :" + data);
             var ip = HttpContext.Connection.RemoteIpAddress.ToString();
-            var allowed = _configuration.GetSection("ManualUrl").Value;
-            if (allowed == "*" || allowed.Split(",").Contains(ip))
+            _logger.LogInformation("remote ip : " + ip);
+            foreach (var model in _repositoryList)
             {
-                _logger.Info("---手动更新---");
-                var list = _configuration.GetSection("Repositories").Get<List<RepositoryModel>>();
-                foreach (var model in list)
+                if (data != model.Secret)
                 {
-                    foreach (var projectModel in model.OutputProjects)
-                    {
-                        _logger.Info(projectModel.LiveRootDir);
-                        var project = new Project(projectModel, new GitHubRepositryFactory());
+                    continue;
+                }
+                foreach (var projectModel in model.OutputProjects)
+                {
+                    _logger.LogInformation(projectModel.LiveRootDir);
+                    _project.Init(projectModel, new GitHubRepositryFactory());
 
-                        var publisher = new AutoPublisher(project);
-                        await publisher.Core();
+                    if (model.Method == Method.FromCommand.ToInt())
+                    {
+                        var str = await _project.Core();
+                        _logger.LogInformation(str);
+                    }
+                    else
+                    {
+                        await _project.CoreOld();
                     }
                 }
-                _logger.Info("===手动更新===");
-                return new HttpResponseMessage(HttpStatusCode.OK);
             }
-            return new HttpResponseMessage(HttpStatusCode.NotFound);
+            _logger.LogInformation("===手动更新===");
+            return new HttpResponseMessage(HttpStatusCode.OK);
         }
     }
 }

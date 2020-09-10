@@ -1,102 +1,91 @@
 ﻿using autoPublish.Core.Models;
 using autoPublish.Core.Utility;
+using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace autoPublish.Core.Runner
 {
-    public class AutoPublisher
-    {
-        //1.拉取文件
-        //2.编译文件 dot publish
-        //3.覆盖目标站点
-        private Project _project;
-
-
-        public AutoPublisher(Project project)
-        {
-            _project = project;
-        }
-
-        public async Task Core()
-        {
-            await Task.Run(() =>
-            {
-                Pull();
-                BuildProject();
-                Publish();
-            });
-        }
-
-        private void Pull()
-        {
-            Console.WriteLine("Start Pull...");
-            var cmdResult = _project.Pull();
-            Console.WriteLine(cmdResult);
-        }
-
-        private void BuildProject()
-        {
-            Console.WriteLine("Start Build...");
-            var cmdResult = _project.Build();
-            Console.WriteLine(cmdResult);
-        }
-
-        private void Publish()
-        {
-            Console.WriteLine("Start Publish...");
-            _project.Publish();
-        }
-    }
-
     public class Project
     {
+        private ILogger<Project> _logger;
         private GitRepository _gitRepository;
         private ProjectBuilder _projectBuilder;
-
+        private ProjectModel _projectModel;
         public string ProjectRootDir { get; set; }
         public string ProjectPublishedDir { get; set; }
         public string LiveRootDir { get; set; }
 
         public ProjectType Type { get; set; }
 
-        public Project(ProjectModel projectModel, GitRepositoryFactory factory)
+        public Project(ILogger<Project> logger)
         {
-            ProjectRootDir = projectModel.ProjectRootDir;
-            Type = (ProjectType)projectModel.ProjectType;
-            LiveRootDir = projectModel.LiveRootDir;
+            _logger = logger;
+
+        }
+
+        public void Init(ProjectModel projectModel, GitRepositoryFactory factory)
+        {
+            _projectModel = projectModel;
+            ProjectRootDir = _projectModel.ProjectRootDir;
+            Type = (ProjectType)_projectModel.ProjectType;
+            LiveRootDir = _projectModel.LiveRootDir;
 
             ProjectPublishedDir = Path.Combine(ProjectRootDir, "publish");
             _gitRepository = factory.GetRepository(ProjectRootDir);
             _projectBuilder = ProjectBuilderFactory.GetBuilder(Type);
+            _logger.LogInformation($"LiveRootDir = {LiveRootDir}, ProjectRootDir = {ProjectRootDir}, ProjectPublishedDir = {ProjectPublishedDir}");
+        }
+
+        public async Task<string> Core()
+        {
+            return await Task.Run(() => _projectModel.Execute(this));
+        }
+
+        public async Task CoreOld()
+        {
+            await Task.Run(() =>
+            {
+                Pull();
+                Build();
+                Publish();
+            });
         }
 
         public string Pull()
         {
+            _logger.LogInformation("---Pull---");
             return _gitRepository.Pull();
         }
 
         public async Task<string> PullAsync()
         {
+            _logger.LogInformation("---PullAsync---");
             return await _gitRepository.PullAsync();
         }
 
         public string Build()
         {
+            _logger.LogInformation("---Build---");
             return _projectBuilder.BuildProject(ProjectRootDir);
         }
 
         public async Task<string> BuildAsync()
         {
+            _logger.LogInformation("---BuildAsync---");
             return await _projectBuilder.BuildProjectAsync(ProjectRootDir);
         }
 
-        public void Publish()
+        public string Publish()
         {
-            //
+            _logger.LogInformation("---Publish---");
             WebSiteUpdate webSiteUpdate = new WebSiteUpdate(LiveRootDir, "", "", ProjectPublishedDir);
             webSiteUpdate.Core();
+            return "Publish finished";
         }
 
     }
